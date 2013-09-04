@@ -2,7 +2,7 @@
 
 A Clojure library implementing an RDF Graph database model for
 Datomic, based on a modestly extended version of the original
-[clojure-rdf.mode](https://github.com/stuartsierra/clojure-rdf)
+[clojure-rdf.model](https://github.com/stuartsierra/clojure-rdf)
 by Stuart Sierra.
 
 ## Usage

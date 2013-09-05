@@ -86,8 +86,9 @@
 (defn node-kind [ent]
   (assert (number? ent))
   (ffirst 
-    (d/q '[:find ?ident :in $ ?e
-            :where [?e :node/kind ?kind][?kind :db/ident ?ident]]
+    (d/q '[:find ?ident :in $ ?e :where
+            [?e :node/kind ?kind]
+            [?kind :db/ident ?ident]]
       (db) ent)))
 
 (defmulti resource? type)
@@ -95,22 +96,24 @@
 (defmethod resource? java.lang.String [thing]
   (not
     (empty?
-      (d/q '[:find ?e :in $ ?uri
-              :where [?e :node/kind :node.kind/resource][?e :resource/uri ?uri]]
+      (d/q '[:find ?e :in $ ?uri :where
+              [?e :node/kind :node.kind/resource]
+              [?e :resource/uri ?uri]]
         (db) (uri thing)))))
 
 (defmethod resource? java.net.URI [thing]
   (not
     (empty?
-      (d/q '[:find ?e :in $ ?uri
-              :where [?e :node/kind :node.kind/resource][?e :resource/uri ?uri]]
+      (d/q '[:find ?e :in $ ?uri :where
+              [?e :node/kind :node.kind/resource]
+              [?e :resource/uri ?uri]]
         (db) thing))))
 
 (defmethod resource? java.lang.Long [thing]
   (not
     (empty?
-      (d/q '[:find ?e :in $ ?e
-              :where [?e :node/kind :node.kind/resource]]
+      (d/q '[:find ?e :in $ ?e :where
+              [?e :node/kind :node.kind/resource]]
         (db) thing))))
 
 (defmethod resource? java.lang.Object [thing]
@@ -121,8 +124,9 @@
 (defmethod r java.lang.String [thing]
   (or
     (ffirst
-      (d/q '[:find ?e :in $ ?uri
-              :where [?e :node/kind :node.kind/resource][?e :resource/uri ?uri]]
+      (d/q '[:find ?e :in $ ?uri :where
+              [?e :node/kind :node.kind/resource]
+              [?e :resource/uri ?uri]]
         (db) (uri thing)))
     (do
       @(d/transact (conn)
@@ -134,8 +138,9 @@
 (defmethod r java.net.URI [thing]
   (or
     (ffirst
-      (d/q '[:find ?e :in $ ?uri
-              :where [?e :node/kind :node.kind/resource][?e :resource/uri ?uri]]
+      (d/q '[:find ?e :in $ ?uri :where
+              [?e :node/kind :node.kind/resource]
+              [?e :resource/uri ?uri]]
         (db) thing))
     (do
       @(d/transact (conn)
@@ -146,8 +151,9 @@
 
 (defmethod r java.lang.Long [thing]
   (let [rsrc  (ffirst
-                (d/q '[:find ?e :in $ ?e
-                        :where [?e :node/kind :node.kind/resource][?e :resource/uri ?uri]]
+                (d/q '[:find ?e :in $ ?e :where
+                        [?e :node/kind :node.kind/resource]
+                        [?e :resource/uri ?uri]]
                   (db) thing))]
     ;; (assert rsrc)
     rsrc))
@@ -166,13 +172,15 @@
   ([designator]
     (cond
       (number? designator)
-      (let [ent (ffirst (d/q '[:find ?e :in $ ?e
-                                :where [?e :node/kind :node.kind/bnode]] (db) designator))]
+      (let [ent (ffirst (d/q '[:find ?e :in $ ?e :where
+                                [?e :node/kind :node.kind/bnode]]
+                          (db) designator))]
         ;; (assert ent)
         ent)
       (string? designator)
-      (or (ffirst (d/q '[:find ?e :in $ ?name
-                          :where [?e :node/kind :node.kind/bnode][?e :bnode/name ?name]]
+      (or (ffirst (d/q '[:find ?e :in $ ?name :where
+                          [?e :node/kind :node.kind/bnode]
+                          [?e :bnode/name ?name]]
                     (db) designator))
         (let [id (d/tempid :db.part/data)
                node [{:db/id id :node/kind :node.kind/bnode :bnode/name designator}]]
@@ -185,8 +193,9 @@
   (= :node.kind/bnode (node-kind thing)))
 
 (defmethod bnode? java.lang.String [thing]
-  (not (empty? (d/q '[:find ?e :in $ ?name
-                       :where [?e :node/kind :node.kind/bnode][?e :bnode/name ?name]]
+  (not (empty? (d/q '[:find ?e :in $ ?name :where
+                       [?e :node/kind :node.kind/bnode]
+                       [?e :bnode/name ?name]]
                  (db) thing))))
 
 (defmethod bnode? java.lang.Object [thing]

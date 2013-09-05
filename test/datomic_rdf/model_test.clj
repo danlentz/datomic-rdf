@@ -2,7 +2,11 @@
   (:require [clojure.test :refer :all]
             [datomic-rdf.model :refer :all]))
 
-(init-rdf-db) 
+(defn init-db [f]
+  (init-rdf-db)
+  (f))
+
+(use-fixtures :once init-db)
 
 (deftest resource-tests
   (testing "resource?"

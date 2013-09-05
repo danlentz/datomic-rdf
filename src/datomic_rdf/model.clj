@@ -78,9 +78,10 @@
   (d/db (conn)))
 
 (defn init-rdf-db []
-  (d/create-database db-url)
-  @(d/transact (conn) (schema/build-parts d/tempid))
-  @(d/transact (conn) (schema/build-schema d/tempid)))
+  (if (d/create-database db-url)
+    (do
+      @(d/transact (conn) (schema/build-parts d/tempid))
+      @(d/transact (conn) (schema/build-schema d/tempid)))))
   
 (defn node-kind [ent]
   (assert (number? ent))

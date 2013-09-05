@@ -86,5 +86,169 @@
     (is (not (literal? (bnode))))
     ))
 
+(deftest node-tests
+  (testing "default"
+    (is (nil? (find-node 1)))
+    (is (nil? (find-node 2))))
+  (testing "resource"
+    (is (=
+          (find-node (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#subject"))
+          (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#subject")))
+    (is (=
+          (find-node (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate"))
+          (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate")))
+    (is (=
+          (find-node (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#object"))
+          (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#object"))))
+  (testing "bnode"
+    (is (number? (find-node (bnode))))
+    (is (number? (find-node (bnode "me"))))
+    (is (=
+          (bnode "me")
+          (find-node (bnode "me"))))
+    (is (=
+          (bnode "me")
+          (bnode (find-node (bnode "me"))))))
+  (testing "literal"
+    (is (map? (find-node (literal "three"))))
+    (is (literal? (find-node (literal "three"))))
+    (is (=
+          (uri "http://www.w3.org/2001/XMLSchema#string")
+          (:literal/datatype (find-node (literal "foo" "en")))))
+    (let [lit {:literal/value "three"
+                :literal/datatype (uri "http://www.w3.org/2001/XMLSchema#simpleType")}]
+      (is (= lit (find-node (literal lit))))
+      (is (= lit (find-node (literal "three")))))))
+      
+(deftest stmt-tests
+  (is (nil? (stmt 5)))
+  (is (number?
+        (stmt
+          (r "http://example.com/one")
+          (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+          (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#List"))))
+  (is (number?
+        (stmt
+          (bnode "me")
+          (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+          (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#List"))))
+  (is (number?
+        (stmt
+          (bnode)
+          (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+          (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#List"))))
+  (is (number?
+        (stmt
+          (bnode "me")
+          (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
+          (literal "three"))))
+  (is (=
+        (stmt
+          (bnode "me")
+          (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
+          (literal "three"))
+        (stmt
+          (bnode "me")
+          (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
+          (literal "three"))))
+  (is (=
+        (stmt
+          (r "http://example.com/one")
+          (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+          (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#List"))
+        (stmt
+          (uri "http://example.com/one")
+          (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+          (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#List"))))
+  (is (=
+        (stmt
+          (r "http://example.com/one")
+          (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+          (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#List"))
+        (stmt
+          (vector
+            (uri "http://example.com/one")
+            (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+            (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#List")))))
+  (is (=
+        (stmt
+          "http://example.com/one"
+          "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+          "http://www.w3.org/1999/02/22-rdf-syntax-ns#List")
+        (stmt
+          (uri "http://example.com/one")
+          (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+          (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#List"))))
+  (is (=
+        (stmt
+          (bnode "me")
+          (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
+          (literal "three"))
+        (stmt
+          (bnode "me")
+          (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
+          (literal "three"))))
+  (is (=
+        (stmt
+          (bnode "me")
+          (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
+          (literal "three"))
+        (stmt
+          (stmt
+            (bnode "me")
+            (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
+            (literal "three")))))
+  (is (not (=
+             (stmt
+               (bnode)
+               (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+               (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#List"))
+             (stmt
+               (bnode)
+               (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+               (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#List"))))))
+
+(deftest find-stmt-tests
+  (is (=
+        (find-stmt
+          (stmt
+            (uri "http://example.com/one")
+            (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+            (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#List")))
+        (vector 
+          (uri "http://example.com/one")
+          (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+          (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#List"))))
+  (is (=
+        (find-stmt
+          (stmt
+            (bnode "me")
+            (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
+            (literal "three")))
+        [(bnode "me")
+          (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
+          {:literal/value "three",
+            :literal/datatype (uri "http://www.w3.org/2001/XMLSchema#simpleType")}]))
+  (let [st (stmt
+             (bnode "me")
+             (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
+             (literal "three"))]
+    (is (=
+          st (stmt (find-stmt st))))))
+
+(deftest stmt?-tests
+  (is (stmt?  (stmt
+                (bnode "me")
+                (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
+                (literal "three"))))
+  (is (stmt?  (vector 
+                (uri "http://example.com/one")
+                (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+                (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#List"))))
+  (is (stmt?  (find-stmt
+                (stmt
+                  (bnode "me")
+                  (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
+                  (literal "three"))))))
 
 ;; (run-tests) => "C-c ,"

@@ -91,6 +91,11 @@
             [?kind :db/ident ?ident]]
       (db) ent)))
 
+(defmulti find-node node-kind)
+
+(defmethod find-node :default [ent]
+  nil)
+
 (defmulti resource? type)
 
 (defmethod resource? java.lang.String [thing]
@@ -161,6 +166,13 @@
 (defmethod r java.lang.Object [thing]
   nil)
 
+(defmethod find-node :node.kind/resource [ent]
+  (ffirst
+    (d/q '[:find ?uri :in $ ?e :where
+            [?e :node/kind :node.kind/resource]
+            [?e :resource/uri ?uri]]
+      (db) ent)))
+
 (defn- create-initial-resource []
   (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")) 
 
@@ -201,9 +213,18 @@
 (defmethod bnode? java.lang.Object [thing]
   false)
 
-;; note this is not quite working for internationalized :literal/language functionality
+(defmethod find-node :node.kind/bnode [ent]
+  (ffirst
+    (d/q '[:find ?e :in $ ?e :where
+            [?e :node/kind :node.kind/bnode]]
+      (db) ent)))
+
+;; TODO: this is not quite working for internationalized :literal/language functionality
 ;; it is included at present only as a syntactical shortcut for string datatype values
 ;; e.g., (literal "xyz" "en") instead of (literal "xyz" "http://www.w3.org/2001/XMLSchema#string")
+;;
+;; TODO: this is pretty hairy... fix when rest of api has been fleshed out and i have a better
+;; feeling which conveniences/shorthands are actually useful/necessary
 
 (defn literal
   ([value-or-ent]
@@ -218,7 +239,8 @@
                             (:literal/value value-or-ent)
                             (or
                               (assert (string? (:literal/value value-or-ent)))
-                              (:literal/datatype value-or-ent)
+                              (when-let [dtype (:literal/datatype value-or-ent)]
+                                (find-node (r dtype)))
                               (:literal/language value-or-ent)))
       :else nil))
   ([value datatype]
@@ -266,6 +288,50 @@
 (defmethod literal? java.lang.Object [thing]
   false)
 
+(defmethod find-node :node.kind/literal [ent]
+  (let [[value datatype]
+         (first
+         (d/q '[:find ?value ?datatype :in $ ?e :where
+                 [?e :node/kind :node.kind/literal]
+                 [?e :literal/value ?value]
+                 [?e :literal/datatype ?datatype]]
+           (db) ent))]
+    {:literal/value value
+      :literal/datatype (find-node datatype)}))
 
-     
-      
+(defn stmt
+  ([thing]
+    (cond
+      (number? thing) (ffirst (d/q '[:find ?e :in $ ?e :where
+                                      [?e :stmt/subj _]]
+                                (db) thing))
+      (coll? thing) (stmt (nth thing 0) (nth thing 1) (nth thing 2))
+      :else nil))
+  ([sub pred obj]
+    (let [stmt-ent (ffirst (d/q '[:find ?e :in $ ?s ?p ?o :where
+                                   [?e :stmt/subj ?s]
+                                   [?e :stmt/pred ?p]
+                                   [?e :stmt/obj  ?o]]
+                             (db)
+                             (or (r sub) (bnode sub))
+                             (r pred)
+                             (or (r obj) (literal obj) (bnode obj))))]
+      (or
+        stmt-ent
+        (let [id (d/tempid :db.part/data)
+               stmt [{:db/id id
+                       :stmt/subj (or (r sub) (bnode sub))
+                       :stmt/pred (r pred)
+                       :stmt/obj (or (r obj) (literal obj) (bnode obj))}]]
+          (:e (second (:tx-data @(d/transact (conn) stmt)))))))))
+
+(defn find-stmt [ent]
+  (when-let [stmt (first (d/q '[:find ?s ?p ?o :in $ ?e :where
+                                  [?e :stmt/subj ?s]
+                                  [?e :stmt/pred ?p]
+                                  [?e :stmt/obj  ?o]]
+                            (db) ent))]
+    (apply vector (map find-node stmt))))
+    
+(defn stmt? [thing]
+  (not (nil? (stmt thing))))

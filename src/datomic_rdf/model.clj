@@ -303,7 +303,7 @@
   ([thing]
     (cond
       (number? thing) (ffirst (d/q '[:find ?e :in $ ?e :where
-                                      [?e :stmt/subj _]]
+                                      [?e :node/kind :node.kind/stmt]]
                                 (db) thing))
       (coll? thing) (stmt (nth thing 0) (nth thing 1) (nth thing 2))
       :else nil))
@@ -320,6 +320,7 @@
         stmt-ent
         (let [id (d/tempid :db.part/data)
                stmt [{:db/id id
+                       :node/kind :node.kind/stmt
                        :stmt/subj (or (r sub) (bnode sub))
                        :stmt/pred (r pred)
                        :stmt/obj (or (r obj) (literal obj) (bnode obj))}]]
@@ -335,3 +336,20 @@
     
 (defn stmt? [thing]
   (not (nil? (stmt thing))))
+
+(defn stmts [& args]
+  (if (and (= 1 (count args)) (coll? (first args)))
+    (apply stmts (first args))
+    (apply vector (map stmt args))))
+
+(defn find-stmts [& args]
+  (if (and (= 1 (count args)) (coll? (first args)))
+    (apply find-stmts (first args))
+    (apply vector (map find-stmt (apply stmts args)))))
+
+(defn stmts? [& args]
+  (if (and (= 1 (count args)) (coll? (first args)))
+    (apply stmts? (first args))
+    (every? stmt? args)))
+
+

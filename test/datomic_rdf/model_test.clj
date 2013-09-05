@@ -190,12 +190,12 @@
           (literal "three"))))
   (is (=
         (stmt
-          (bnode "me")
+          (bnode "x")
           (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
           (literal "three"))
         (stmt
           (stmt
-            (bnode "me")
+            (bnode "x")
             (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
             (literal "three")))))
   (is (not (=
@@ -238,7 +238,7 @@
 
 (deftest stmt?-tests
   (is (stmt?  (stmt
-                (bnode "me")
+                (bnode "x")
                 (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
                 (literal "three"))))
   (is (stmt?  (vector 
@@ -247,8 +247,39 @@
                 (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#List"))))
   (is (stmt?  (find-stmt
                 (stmt
-                  (bnode "me")
+                  (bnode "x")
                   (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
                   (literal "three"))))))
 
-;; (run-tests) => "C-c ,"
+(deftest stmts-tests
+  (let [slist (list
+                (stmt
+                  (bnode)
+                  (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
+                  (literal "one"))
+                (stmt
+                  (bnode)
+                  (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
+                  (literal "two"))
+                (stmt
+                  (bnode)
+                  (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
+                  (literal "three"))
+                (stmt
+                  (bnode)
+                  (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
+                  (literal "four"))
+                )]
+    (is (every? number? slist))
+    (is (= slist (apply stmts slist)))
+    (is (= slist (stmts slist)))
+    (is (= slist (apply stmts (apply find-stmts slist))))
+    (is (= slist (stmts (find-stmts slist))))
+    (is (apply stmts? slist))
+    (is (stmts? slist))
+    (is (not (apply stmts? (cons 1 slist))))
+    (is (not (stmts? (cons 1 slist))))))
+  
+
+
+

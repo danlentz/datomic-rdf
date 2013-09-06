@@ -6,10 +6,10 @@
   (:require [clojure.string :as string])
   (:require [datomic.api :as d])
   (:require [datomic.db  :as db])
-  (:require [clojure.uuid :as uuid])
   (:require [datomic.common :as common])
   (:require [datomic-schema.schema :as schema])
-  (:import (java.net URI))
+  (:import (java.net  URI))
+  (:import (java.util UUID))
   (:gen-class))
 
 ;;;
@@ -38,7 +38,15 @@
 
 (defschema node (part data)
   (fields
-    [kind :enum [:resource :literal :bnode :stmt :graph]]))
+    [kind :enum [:resource :literal :bnode :stmt :graph :tree :leaf :root]]
+    [w    :long :one]
+    [l    :ref  :one]
+    [r    :ref  :one]
+    [k    :ref  :one]
+    [v    :ref  :one]
+    [uuid :uuid :one :indexed :unique-identity]
+    ))
+
 
 (defschema resource (part data)
   (fields
@@ -64,12 +72,16 @@
 (defschema graph (part data)
   (fields
     [stmts :ref :many]
-    [uri :uri :one :unique-identity]))
+    [name  :ref :one :unique-identity]))
 
-(defn uri [designator]
-  (if (string? designator)
-    (datomic.io/as-uri designator)
-    designator))
+
+(defmulti uri type)
+
+(defmethod uri java.lang.String [designator]
+  (datomic.io/as-uri designator))
+
+(defmethod uri java.net.URI [designator]
+  designator)
 
 (defn conn []
   (d/connect db-url))
@@ -84,12 +96,12 @@
       @(d/transact (conn) (schema/build-schema d/tempid)))))
   
 (defn node-kind [ent]
-  (assert (number? ent))
-  (ffirst 
-    (d/q '[:find ?ident :in $ ?e :where
-            [?e :node/kind ?kind]
-            [?kind :db/ident ?ident]]
-      (db) ent)))
+  (when (number? ent)
+    (ffirst 
+      (d/q '[:find ?ident :in $ ?e :where
+              [?e :node/kind ?kind]
+              [?kind :db/ident ?ident]]
+        (db) ent))))
 
 (defmulti find-node node-kind)
 
@@ -102,16 +114,16 @@
   (not
     (empty?
       (d/q '[:find ?e :in $ ?uri :where
-              [?e :node/kind :node.kind/resource]
-              [?e :resource/uri ?uri]]
+              [?e :node/kind     :node.kind/resource]
+              [?e :resource/uri  ?uri]]
         (db) (uri thing)))))
 
 (defmethod resource? java.net.URI [thing]
   (not
     (empty?
       (d/q '[:find ?e :in $ ?uri :where
-              [?e :node/kind :node.kind/resource]
-              [?e :resource/uri ?uri]]
+              [?e :node/kind     :node.kind/resource]
+              [?e :resource/uri  ?uri]]
         (db) thing))))
 
 (defmethod resource? java.lang.Long [thing]
@@ -124,46 +136,40 @@
 (defmethod resource? java.lang.Object [thing]
   false)
 
-(defmulti r type)
+(defmulti resource! type)
 
-(defmethod r java.lang.String [thing]
+(defmethod resource! java.lang.String [thing]
   (or
     (ffirst
       (d/q '[:find ?e :in $ ?uri :where
-              [?e :node/kind :node.kind/resource]
-              [?e :resource/uri ?uri]]
+              [?e :node/kind     :node.kind/resource]
+              [?e :resource/uri  ?uri]]
         (db) (uri thing)))
-    (do
-      @(d/transact (conn)
-        [{:db/id (d/tempid :db.part/data)
-           :node/kind :node.kind/resource
-           :resource/uri  (uri thing)}])
-      (r thing))))
+     (:e (second (:tx-data @(d/transact (conn)
+                              [{:db/id (d/tempid :db.part/data)
+                                 :node/kind :node.kind/resource
+                                 :resource/uri  (uri thing)}]))))))
 
-(defmethod r java.net.URI [thing]
+(defmethod resource! java.net.URI [thing]
   (or
     (ffirst
       (d/q '[:find ?e :in $ ?uri :where
               [?e :node/kind :node.kind/resource]
               [?e :resource/uri ?uri]]
         (db) thing))
-    (do
-      @(d/transact (conn)
-        [{:db/id (d/tempid :db.part/data)
-           :node/kind :node.kind/resource
-           :resource/uri  thing}])
-      (r thing))))  
+    (:e (second (:tx-data  @(d/transact (conn)
+                              [{:db/id (d/tempid :db.part/data)
+                                 :node/kind :node.kind/resource
+                                 :resource/uri  thing}]))))))
 
-(defmethod r java.lang.Long [thing]
-  (let [rsrc  (ffirst
-                (d/q '[:find ?e :in $ ?e :where
-                        [?e :node/kind :node.kind/resource]
-                        [?e :resource/uri ?uri]]
-                  (db) thing))]
-    ;; (assert rsrc)
-    rsrc))
+(defmethod resource! java.lang.Long [thing]
+  (ffirst
+    (d/q '[:find ?e :in $ ?e :where
+            [?e :node/kind :node.kind/resource]
+            [?e :resource/uri ?uri]]
+      (db) thing)))
 
-(defmethod r java.lang.Object [thing]
+(defmethod resource! java.lang.Object [thing]
   nil)
 
 (defmethod find-node :node.kind/resource [ent]
@@ -174,29 +180,27 @@
       (db) ent)))
 
 (defn- create-initial-resource []
-  (r "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")) 
+  (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")) 
 
-(defn bnode
+(defn bnode!
   ([]
     (let [id (d/tempid :db.part/data)
            node [{:db/id id :node/kind :node.kind/bnode}]]
       (:e (second (:tx-data @(d/transact (conn) node))))))
   ([designator]
     (cond
-      (number? designator)
-      (let [ent (ffirst (d/q '[:find ?e :in $ ?e :where
-                                [?e :node/kind :node.kind/bnode]]
-                          (db) designator))]
-        ;; (assert ent)
-        ent)
-      (string? designator)
-      (or (ffirst (d/q '[:find ?e :in $ ?name :where
-                          [?e :node/kind :node.kind/bnode]
-                          [?e :bnode/name ?name]]
-                    (db) designator))
-        (let [id (d/tempid :db.part/data)
-               node [{:db/id id :node/kind :node.kind/bnode :bnode/name designator}]]
-          (:e (second (:tx-data @(d/transact (conn) node))))))
+      (number? designator) (ffirst (d/q '[:find ?e :in $ ?e :where
+                                           [?e :node/kind :node.kind/bnode]]
+                                     (db) designator))
+      (string? designator) (or (ffirst (d/q '[:find ?e :in $ ?name :where
+                                               [?e :node/kind :node.kind/bnode]
+                                               [?e :bnode/name ?name]]
+                                         (db) designator))
+                             (let [id (d/tempid :db.part/data)
+                                    node [{:db/id id
+                                            :node/kind :node.kind/bnode
+                                            :bnode/name designator}]]
+                               (:e (second (:tx-data @(d/transact (conn) node))))))
       :else nil)))
 
 (defmulti bnode? type)
@@ -226,26 +230,26 @@
 ;; TODO: this is pretty hairy... fix when rest of api has been fleshed out and i have a better
 ;; feeling which conveniences/shorthands are actually useful/necessary
 
-(defn literal
+(defn literal!
   ([value-or-ent]
     (cond
       (number? value-or-ent) (ffirst (d/q '[:find ?e :in $ ?e :where
                                              [?e :node/kind :node.kind/literal]]
                                        (db) value-or-ent))
-      (string? value-or-ent) (literal value-or-ent
-                               (r "http://www.w3.org/2001/XMLSchema#simpleType"))
+      (string? value-or-ent) (literal! value-or-ent
+                               (resource! "http://www.w3.org/2001/XMLSchema#simpleType"))
 
-      (map? value-or-ent) (literal
-                            (:literal/value value-or-ent)
-                            (or
-                              (assert (string? (:literal/value value-or-ent)))
-                              (when-let [dtype (:literal/datatype value-or-ent)]
-                                (find-node (r dtype)))
-                              (:literal/language value-or-ent)))
+      (map? value-or-ent)    (literal!
+                               (:literal/value value-or-ent)
+                               (or
+                                 (assert (string? (:literal/value value-or-ent)))
+                                 (when-let [dtype (:literal/datatype value-or-ent)]
+                                   (find-node (resource! dtype)))
+                                 (:literal/language value-or-ent)))
       :else nil))
   ([value datatype]
     (if (nil? datatype)
-      (literal value)
+      (literal! value)
       (if (and (string? datatype) (= (count datatype) 2))      
         (or
           (assert (= datatype "en")) ;; for now to ensure scalar response to string literal queries
@@ -254,12 +258,12 @@
                           [?e :literal/value ?value]
                           [?e :literal/datatype ?datatype]
                           [?e :literal/language ?lang]]
-                    (db) value (r "http://www.w3.org/2001/XMLSchema#string") datatype))
+                    (db) value (resource! "http://www.w3.org/2001/XMLSchema#string") datatype))
           (let [id (d/tempid :db.part/data)
                  node [{:db/id id
                          :node/kind :node.kind/literal
                          :literal/value value
-                         :literal/datatype (r "http://www.w3.org/2001/XMLSchema#string")
+                         :literal/datatype (resource! "http://www.w3.org/2001/XMLSchema#string")
                          :literal/language datatype}]]
             (:e (second (:tx-data @(d/transact (conn) node))))))
         (or
@@ -268,12 +272,12 @@
                           [?e :node/kind :node.kind/literal]
                           [?e :literal/value ?value]
                           [?e :literal/datatype ?datatype]]
-                    (db) value (r datatype)))
+                    (db) value (resource! datatype)))
           (let [id (d/tempid :db.part/data)
                  node [{:db/id id
                          :node/kind :node.kind/literal
                          :literal/value value
-                         :literal/datatype (r datatype)}]]
+                         :literal/datatype (resource! datatype)}]]
             (:e (second (:tx-data @(d/transact (conn) node))))))))))
 
 
@@ -299,13 +303,13 @@
     {:literal/value value
       :literal/datatype (find-node datatype)}))
 
-(defn stmt
+(defn stmt!
   ([thing]
     (cond
       (number? thing) (ffirst (d/q '[:find ?e :in $ ?e :where
                                       [?e :node/kind :node.kind/stmt]]
                                 (db) thing))
-      (coll? thing) (stmt (nth thing 0) (nth thing 1) (nth thing 2))
+      (coll? thing) (stmt! (nth thing 0) (nth thing 1) (nth thing 2))
       :else nil))
   ([sub pred obj]
     (let [stmt-ent (ffirst (d/q '[:find ?e :in $ ?s ?p ?o :where
@@ -313,43 +317,57 @@
                                    [?e :stmt/pred ?p]
                                    [?e :stmt/obj  ?o]]
                              (db)
-                             (or (r sub) (bnode sub))
-                             (r pred)
-                             (or (r obj) (literal obj) (bnode obj))))]
+                             (or (resource! sub) (bnode! sub))
+                             (resource! pred)
+                             (or (resource! obj) (literal! obj) (bnode! obj))))]
       (or
         stmt-ent
         (let [id (d/tempid :db.part/data)
                stmt [{:db/id id
                        :node/kind :node.kind/stmt
-                       :stmt/subj (or (r sub) (bnode sub))
-                       :stmt/pred (r pred)
-                       :stmt/obj (or (r obj) (literal obj) (bnode obj))}]]
+                       :stmt/subj (or (resource! sub) (bnode! sub))
+                       :stmt/pred (resource! pred)
+                       :stmt/obj (or (resource! obj) (literal! obj) (bnode! obj))}]]
           (:e (second (:tx-data @(d/transact (conn) stmt)))))))))
 
 (defn find-stmt [ent]
-  (when-let [stmt (first (d/q '[:find ?s ?p ?o :in $ ?e :where
-                                  [?e :stmt/subj ?s]
-                                  [?e :stmt/pred ?p]
-                                  [?e :stmt/obj  ?o]]
-                            (db) ent))]
-    (apply vector (map find-node stmt))))
+  (when-let [statement (first (d/q '[:find ?s ?p ?o :in $ ?e :where
+                                      [?e :stmt/subj ?s]
+                                      [?e :stmt/pred ?p]
+                                      [?e :stmt/obj  ?o]]
+                                (db) ent))]
+    (apply vector (map find-node statement))))
     
 (defn stmt? [thing]
-  (not (nil? (stmt thing))))
+  (not (nil? (stmt! thing))))
 
-(defn stmts [& args]
+(defn stmts! [& args]
   (if (and (= 1 (count args)) (coll? (first args)))
-    (apply stmts (first args))
-    (apply vector (map stmt args))))
+    (apply stmts! (first args))
+    (mapv stmt! args)))
 
 (defn find-stmts [& args]
   (if (and (= 1 (count args)) (coll? (first args)))
     (apply find-stmts (first args))
-    (apply vector (map find-stmt (apply stmts args)))))
+    (mapv find-stmt (apply stmts! args))))
 
 (defn stmts? [& args]
   (if (and (= 1 (count args)) (coll? (first args)))
     (apply stmts? (first args))
     (every? stmt? args)))
 
+(defn graph! [designator]
+  (let [name-ent (or (resource! designator) (bnode! designator))]
+    (assert (number? name-ent))
+    (let [graph-ent (ffirst (d/q '[:find ?e :in $ ?name :where
+                                    [?e :node/kind :node.kind/graph]
+                                    [?e :graph/name ?name]]
+                              (db) name-ent))]
+      (or
+        graph-ent
+        (let [id (d/tempid :db.part/data)
+               stmt [{:db/id id
+                       :node/kind :node.kind/graph
+                       :graph/name name-ent}]]
+          (:e (second (:tx-data @(d/transact (conn) stmt)))))))))
 

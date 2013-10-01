@@ -12,27 +12,34 @@
   (:import (java.util UUID))
   (:gen-class))
 
-;;;
-;; URLs
-;;
-;; (def mem-url "datomic:mem://sandbox")
-;; (def db-url  "datomic:free://localhost:4334/sandbox")
-;;
-;;;
-;; Types
-;;
-;; :keyword :string :boolean :long :bigint :float :double :bigdec
-;; :ref :instant :uuid :uri :bytes :enum
-;;
-;;;
-;; Options
-;;
-;; :unique-value :unique-identity :indexed :many :fulltext :component
-;; :nohistory "Some doc string" [:arbitrary "Enum" :values]
-;;
-;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Schema Definition Reference
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def db-url "datomic:mem://rdf.model")
+  ;;;
+  ;; URLs
+  ;;
+  ;; (def mem-url "datomic:mem://sandbox")
+  ;; (def db-url  "datomic:free://localhost:4334/sandbox")
+  ;;
+  ;;;
+  ;; Types
+  ;;
+  ;; :keyword :string :boolean :long :bigint :float :double :bigdec
+  ;; :ref :instant :uuid :uri :bytes :enum
+  ;;
+  ;;;
+  ;; Options
+  ;;
+  ;; :unique-value :unique-identity :indexed :many :fulltext :component
+  ;; :nohistory "Some doc string" [:arbitrary "Enum" :values]
+  ;;
+  ;;
+  ;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; RDF Model Database Schema
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defpart data)
 
@@ -46,7 +53,6 @@
     [v    :ref  :one]
     [uuid :uuid :one :indexed :unique-identity]
     ))
-
 
 (defschema resource (part data)
   (fields
@@ -74,6 +80,11 @@
     [stmts :ref :many]
     [name  :ref :one :unique-identity]))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; DB Plumbing
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def db-url "datomic:mem://rdf.model")
 
 (defmulti uri type)
 
@@ -83,18 +94,119 @@
 (defmethod uri java.net.URI [designator]
   designator)
 
-(defn conn []
-  (d/connect db-url))
+(defn conn [& spec]
+  (d/connect (or (first spec) db-url)))
 
-(defn db []
-  (d/db (conn)))
+(defn db [& spec]
+  (d/db (apply conn spec)))
 
-(defn init-rdf-db []
-  (if (d/create-database db-url)
-    (do
-      @(d/transact (conn) (schema/build-parts d/tempid))
-      @(d/transact (conn) (schema/build-schema d/tempid)))))
+(defn db-history
+  "Returns a special database containing all assertions and
+   retractions across time. See datomic.api/history for details."
+  ([] (d/history (db))))
+
+(defn entity-id 
+   "Returns the entity id of an entity."
+  [e]
+  (:db/id e))
+
+(defn delete-entity 
+  "Remove an entity with all its attributes from the database."
+  [eid]
+  @(d/transact [[:db.fn/retractEntity eid]])
+  nil)
+
+(defn delete-entities
+  "Deletes given entities keyed by ids."
+  [& ids]
+   @(d/transact (map #(vec [:db.fn/retractEntity %]) ids)))
+
+(defn entity->map 
+  "Converts an entity into a map with :db/id added.
+   Caution: looses lazyness."
+  ( [e]  (select-keys e (conj (keys e) :db/id)))
+  ( [db eid] (entity->map (d/entity db eid))))
+
+(defn eid->entity 
+  "get an entity via its id."
+  [eid]
+  (when eid
+     (d/entity (db) eid)))
+
+(defn init-rdf-db
+  ([]
+    (init-rdf-db db-url))
+  ([spec]
+    (if (d/create-database spec)
+      (do
+        @(d/transact (conn spec) (schema/build-parts d/tempid))
+        @(d/transact (conn spec) (schema/build-schema d/tempid))))
+    (db spec)))
+ 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Rules
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defonce ^:dynamic *rule-base*   (atom []))
+
+(defn set-rulebase
+  "Sets current rule base."
+  [rules]
+  (reset! *rule-base* rules))
+
+(defn get-rulebase
+  "Gets current rule base."
+  []
+  @*rule-base*)
+
+(defn add-rule-to-rulebase 
+  [rule]
+  (swap! *rule-base* conj rule)
+  rule)
   
+(defn read-rulebase
+  "Read all forms in f, where f is any resource that can
+   be opened by io/reader."
+  [f]
+  (reset! *rule-base* (slurp f)))
+
+(defn save-rulebase
+  "Opens f with writer, writes current-ruleset to f, then
+   closes f. Options passed to clojure.java.io/writer."
+  [f & options]
+  (apply spit f (get-rulebase) options))
+
+(defn save-rules
+  "Opens f with writer, writes rules to f, then
+   closes f. Options passed to clojure.java.io/writer."
+  [f rules & options]
+  (apply spit f rules options))
+
+(defn build-rule [name vars clauses]
+  (apply vector
+        (apply vector name vars)
+        clauses))
+
+(defn new-rule [name vars clauses]
+  (add-rule-to-rulebase (build-rule name vars clauses)))
+
+(defmacro defrule [name vars & clauses]
+  `(new-rule '~name '~vars '~clauses))
+   
+(defmacro defrules [& rules]
+   `(doseq [rule# '~rules]
+      (println rule#)
+      (if (and (or (list? rule#)
+                     (vector? rule#))
+                 (> (count rule#) 2))
+        (new-rule (first rule#) (second rule#) (nnext rule#))
+        (println (str "Rule '" rule# "' ignored, wrong syntax." )))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Abstract Nodes
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (defn node-kind [ent]
   (when (number? ent)
     (ffirst 
@@ -107,6 +219,11 @@
 
 (defmethod find-node :default [ent]
   nil)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Resources
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 
 (defmulti resource? type)
 
@@ -182,6 +299,28 @@
 (defn- create-initial-resource []
   (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")) 
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; RDF Vocabulary
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defonce rdf:Resource  (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#Resource"))
+(defonce rdf:Statement (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#Statement"))
+(defonce rdf:List      (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#List"))
+
+(defonce rdf:type      (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"))
+(defonce rdf:subject   (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#subject"))
+(defonce rdf:predicate (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate"))
+(defonce rdf:object    (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#object"))
+(defonce rdf:first     (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#first"))
+(defonce rdf:rest      (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#rest"))
+(defonce rdf:value     (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#value"))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Blank-Nodes
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (defn bnode!
   ([]
     (let [id (d/tempid :db.part/data)
@@ -222,6 +361,10 @@
     (d/q '[:find ?e :in $ ?e :where
             [?e :node/kind :node.kind/bnode]]
       (db) ent)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Literal Values
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; TODO: this is not quite working for internationalized :literal/language functionality
 ;; it is included at present only as a syntactical shortcut for string datatype values
@@ -280,7 +423,6 @@
                          :literal/datatype (resource! datatype)}]]
             (:e (second (:tx-data @(d/transact (conn) node))))))))))
 
-
 (defmulti literal? type)
 
 (defmethod literal? clojure.lang.PersistentArrayMap [thing]
@@ -302,6 +444,10 @@
            (db) ent))]
     {:literal/value value
       :literal/datatype (find-node datatype)}))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Statements
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn stmt!
   ([thing]
@@ -356,18 +502,83 @@
     (apply stmts? (first args))
     (every? stmt? args)))
 
-(defn graph! [designator]
-  (let [name-ent (or (resource! designator) (bnode! designator))]
-    (assert (number? name-ent))
-    (let [graph-ent (ffirst (d/q '[:find ?e :in $ ?name :where
-                                    [?e :node/kind :node.kind/graph]
-                                    [?e :graph/name ?name]]
-                              (db) name-ent))]
-      (or
-        graph-ent
-        (let [id (d/tempid :db.part/data)
-               stmt [{:db/id id
-                       :node/kind :node.kind/graph
-                       :graph/name name-ent}]]
-          (:e (second (:tx-data @(d/transact (conn) stmt)))))))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Graphs
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn graph!
+  ([]
+    (graph! (bnode!)))
+  ([designator]
+    (if (coll? designator)
+      (apply graph! (bnode!) designator) 
+      (let [name-ent (or (resource! designator) (bnode! designator))]
+      (assert (number? name-ent))
+      (let [graph-ent (ffirst (d/q '[:find ?e :in $ ?name :where
+                                      [?e :node/kind :node.kind/graph]
+                                      [?e :graph/name ?name]]
+                                (db) name-ent))]
+        (or
+          graph-ent
+          (let [id (d/tempid :db.part/data)
+                 stmt [{:db/id id
+                         :node/kind :node.kind/graph
+                         :graph/name name-ent}]]
+            (:e (second (:tx-data @(d/transact (conn) stmt))))))))))
+  ([designator & statements]
+    (let [g (graph! (or designator (bnode!)))
+           name (ffirst (d/q '[:find ?name :in $ ?e :where
+                      [?e :node/kind :node.kind/graph]
+                      [?e :graph/name ?name]]
+                (db) g))
+           slist (stmts! statements)
+           ops (mapv #(assoc {:db/id (d/tempid :db.part/data)
+                               :graph/name name}
+                        :graph/stmts %)
+                 slist)]
+      @(d/transact (conn) ops)
+      g)))
+
+(defn graph? [ent]
+  (= :node.kind/graph (node-kind ent)))
+
+(defn graph-name [ent]
+  (find-node
+    (ffirst (d/q '[:find ?name :in $ ?e :where
+                    [?e :node/kind :node.kind/graph]
+                    [?e :graph/name ?name]]
+              (db) ent))))
+  
+(defn find-graph [ent]  
+  (set (mapv first (d/q '[:find ?stmts :in $ ?e :where
+                           [?e :node/kind :node.kind/graph]
+                           [?e :graph/stmts ?stmts]]
+                     (db) ent))))
+
+(defn graph-stmts [ent]
+  (find-stmts (find-graph ent)))
+
+(defn graph-size [ent]
+  (count (find-graph ent)))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Context
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn compute-default-context []
+  (uri "http://example.com/"))
+
+(defonce ^:dynamic *context* (compute-default-context))
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; RDF Entailment Rules
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; (defrule rdf01 [?p]
+;;   [[_    ?p     _]
+;;     [?e :db/id 
+;;    [?p rdf:type rdf:Property]])
 

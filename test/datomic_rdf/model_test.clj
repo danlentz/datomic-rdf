@@ -133,91 +133,35 @@
       
 (deftest stmt-tests
   (is (nil? (stmt! 5)))
-  (is (number?
-        (stmt!
-          (resource! "http://example.com/one")
-          (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
-          (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#List"))))
-  (is (number?
-        (stmt!
-          (bnode! "me")
-          (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
-          (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#List"))))
-  (is (number?
-        (stmt!
-          (bnode!)
-          (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
-          (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#List"))))
-  (is (number?
-        (stmt!
-          (bnode! "me")
-          (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
-          (literal! "three"))))
-  (is (=
-        (stmt!
-          (bnode! "me")
-          (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
-          (literal! "three"))
-        (stmt!
-          (bnode! "me")
-          (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
-          (literal! "three"))))
-  (is (=
-        (stmt!
-          (resource! "http://example.com/one")
-          (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
-          (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#List"))
-        (stmt!
-          (uri "http://example.com/one")
-          (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
-          (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#List"))))
-  (is (=
-        (stmt!
-          (resource! "http://example.com/one")
-          (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
-          (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#List"))
-        (stmt!
-          (vector
-            (uri "http://example.com/one")
-            (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
-            (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#List")))))
-  (is (=
-        (stmt!
-          "http://example.com/one"
-          "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
-          "http://www.w3.org/1999/02/22-rdf-syntax-ns#List")
-        (stmt!
-          (uri "http://example.com/one")
-          (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
-          (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#List"))))
-  (is (=
-        (stmt!
-          (bnode! "me")
-          (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
-          (literal! "three"))
-        (stmt!
-          (bnode! "me")
-          (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
-          (literal! "three"))))
-  (is (=
-        (stmt!
-          (bnode! "x")
-          (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
-          (literal! "three"))
-        (stmt!
-          (stmt!
-            (bnode! "x")
-            (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
-            (literal! "three")))))
+  (is (number? (stmt! (resource! "http://example.com/one") rdf:type rdf:List)))
+  (is (number? (stmt! (bnode! "me000") rdf:type rdf:List)))
+  (is (number? (stmt! (bnode!) rdf:type rdf:List)))
+  (is (number? (stmt! (bnode! "me001") rdf:value (literal! "three"))))
+  (is (=       (stmt! (bnode! "me001") rdf:value (literal! "three"))
+               (stmt! (bnode! "me001") rdf:value (literal! "three"))))
+  (is (=       (stmt! (resource! "http://example.com/one")   rdf:type rdf:List)
+               (stmt! (uri "http://example.com/one")         rdf:type rdf:List)))
+  (is (=       (stmt! (resource! "http://example.com/one")   rdf:type rdf:List)
+               (stmt! (vector (uri "http://example.com/one") rdf:type rdf:List))))
+  (is (=       (stmt!
+                 "http://example.com/one"
+                 "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+                 "http://www.w3.org/1999/02/22-rdf-syntax-ns#List")
+               (stmt!
+                 (uri "http://example.com/one")
+                 (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+                 (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#List"))))
+  (is (=       (stmt! (bnode! "me002") rdf:value (literal! "three"))
+               (stmt!
+                 (bnode! "me002")
+                 (uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#value")
+                 (literal! "three"))))
+  (is (=       (stmt! (bnode! "x001") rdf:value (literal! "three"))
+               (stmt!
+                 (stmt! (bnode! "x001") rdf:value (literal! "three")))))
   (is (not (=
-             (stmt!
-               (bnode!)
-               (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
-               (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#List"))
-             (stmt!
-               (bnode!)
-               (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
-               (resource! "http://www.w3.org/1999/02/22-rdf-syntax-ns#List"))))))
+               (stmt! (bnode!) rdf:type rdf:List)
+               (stmt! (bnode!) rdf:type rdf:List)))))
 
 (deftest find-stmt-tests
   (is (=
@@ -291,7 +235,11 @@
     (is (not (stmts? (cons 1 slist))))))
   
 (deftest graph-tests
-  (testing "graph!"
+  (testing "graph entity"
+    (is (graph? (graph!)))
+    (is (=
+          (graph-name (graph! (bnode! "g")))
+          (bnode! "g")))
     (is (=
           (graph! (bnode! "x"))
           (graph! (bnode! "x"))))
@@ -309,6 +257,19 @@
           (graph! (uri "http://example.com/g1"))))
     (is (not= 
           (graph! (bnode!))
-          (graph! (bnode!))))))
+          (graph! (bnode!)))))
+  (testing "graph value"
+    (is (= 0 (graph-size (graph!))))
+    (is (empty? (find-graph (graph!))))
+    (let [slist (list
+                  (stmt! (bnode!) rdf:value (literal! "one"))
+                  (stmt! (bnode!) rdf:value (literal! "two"))
+                  (stmt! (bnode!) rdf:value (literal! "three"))
+                  (stmt! (bnode!) rdf:value (literal! "four")))
+           g    (graph! slist)]
+      (is (= 4 (graph-size g)))
+      (is (stmts? (graph-stmts g)))
+      (is (= (find-graph g) (set slist))))         
+  ))
 
 

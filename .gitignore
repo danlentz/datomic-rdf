@@ -1,11 +1,5 @@
-/target
-/classes
-/checkouts
-pom.xml
-pom.xml.asc
-*.jar
-*.class
-.lein-deps-sum
-.lein-failures
-.lein-plugins
-.lein-repl-history
+tmp
+attic
+.DS_Store
+autodoc/**
+
